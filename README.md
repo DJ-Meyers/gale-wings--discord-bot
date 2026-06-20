@@ -1,4 +1,8 @@
-# gale-wings--bot
+# gale-wings--discord-bot
+
+
+https://github.com/user-attachments/assets/6a704341-7bbd-4551-b507-4d8279b8bf6a
+
 
 Discord bot for Gale Wings damage calcs. One slash command: `/gwcalc <input>`.
 
