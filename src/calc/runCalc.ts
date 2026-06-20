@@ -55,6 +55,7 @@ export const runCalc = async (input: string): Promise<CalcOutcome> => {
     defenderSide,
     move,
     vs.fieldConditions ?? {},
+    { isSingleTarget: vs.attacker.pokemon.isSingleTarget ?? false },
   )
 
   if (!result) {

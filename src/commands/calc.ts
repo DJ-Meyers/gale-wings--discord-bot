@@ -1,12 +1,30 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   MessageFlags,
   SlashCommandBuilder,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
 } from 'discord.js'
 
-import { formatResult } from '~/calc/format'
+import { formatFailure, formatResult } from '~/calc/format'
 import { runCalc } from '~/calc/runCalc'
 import { log } from '~/log'
+
+export const SHARE_CUSTOM_ID = 'gwcalc:share'
+
+// Built fresh per reply so the disabled variant doesn't mutate a shared
+// instance. Label flips to "Shared" once used as visible confirmation that
+// the public follow-up went through.
+const shareRow = (disabled = false): ActionRowBuilder<ButtonBuilder> =>
+  new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(SHARE_CUSTOM_ID)
+      .setLabel(disabled ? 'Shared' : 'Share to channel')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+  )
 
 // Per-user cooldown prevents one user from burning the bot's shared
 // rate-limit budget at the api parser.
@@ -27,7 +45,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption((o) =>
     o
       .setName('input')
-      .setDescription('e.g. "32+ SpA Gardevoir Dazzling Gleam vs 4 HP Garchomp"')
+      .setDescription('e.g. "32+ ZardY HH Heat Wave vs 32/20+ Occa Sini"')
       .setRequired(true)
       .setMaxLength(500),
   )
@@ -48,7 +66,7 @@ export const execute = async (
 
   const input = interaction.options.getString('input', true)
   const start = Date.now()
-  await interaction.deferReply()
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral })
   const outcome = await runCalc(input)
 
   log.info(
@@ -65,8 +83,43 @@ export const execute = async (
   )
 
   if (!outcome.ok) {
-    await interaction.editReply({ content: `❌ ${outcome.reason}` })
+    await interaction.editReply({ embeds: [formatFailure(outcome.reason)] })
     return
   }
-  await interaction.editReply({ embeds: [formatResult(outcome.result)] })
+  await interaction.editReply({
+    embeds: [formatResult(outcome.result, outcome.vs)],
+    components: [shareRow()],
+  })
+}
+
+// Promotes an ephemeral calc reply to a public channel post. The original
+// ephemeral message stays visible only to the requester; we disable its button
+// in place so the same calc can't be shared twice. Button lives on an
+// ephemeral message, so Discord only delivers the click from the original
+// requester — no extra auth check needed.
+export const handleShare = async (
+  interaction: ButtonInteraction,
+): Promise<void> => {
+  const embed = interaction.message.embeds[0]
+  if (!embed) {
+    await interaction.reply({
+      content: 'Nothing to share.',
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+  await interaction.update({ components: [shareRow(true)] })
+  await interaction.followUp({
+    content: `<@${interaction.user.id}> shared a calc:`,
+    embeds: [embed],
+  })
+
+  log.info(
+    {
+      event: 'calc.share',
+      userId: interaction.user.id,
+      guildId: interaction.guildId,
+    },
+    '/gwcalc share',
+  )
 }

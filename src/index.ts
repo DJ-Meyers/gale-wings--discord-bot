@@ -3,8 +3,10 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  type Interaction,
 } from 'discord.js'
 
+import * as calc from '~/commands/calc'
 import { commands } from '~/commands'
 import { env } from '~/env'
 import { log } from '~/log'
@@ -12,23 +14,36 @@ import { log } from '~/log'
 const client = new Client({ intents: [GatewayIntentBits.Guilds] })
 
 client.on(Events.InteractionCreate, async (i) => {
-  if (!i.isChatInputCommand()) return
-  const cmd = commands.find((c) => c.data.name === i.commandName)
-  if (!cmd) return
   try {
-    await cmd.execute(i)
-  } catch (err) {
-    log.error({ err, commandName: i.commandName }, 'command execution failed')
-    if (i.deferred || i.replied) {
-      await i.editReply('Internal error.')
-    } else {
-      await i.reply({
-        content: 'Internal error.',
-        flags: MessageFlags.Ephemeral,
-      })
+    if (i.isChatInputCommand()) {
+      const cmd = commands.find((c) => c.data.name === i.commandName)
+      if (!cmd) return
+      await cmd.execute(i)
+      return
     }
+    if (i.isButton()) {
+      if (i.customId === calc.SHARE_CUSTOM_ID) {
+        await calc.handleShare(i)
+      }
+      return
+    }
+  } catch (err) {
+    log.error(
+      { err, type: i.type, customId: 'customId' in i ? i.customId : undefined },
+      'interaction handler failed',
+    )
+    await safeErrorReply(i)
   }
 })
+
+const safeErrorReply = async (i: Interaction): Promise<void> => {
+  if (!i.isRepliable()) return
+  if (i.deferred || i.replied) {
+    await i.followUp({ content: 'Internal error.', flags: MessageFlags.Ephemeral })
+  } else {
+    await i.reply({ content: 'Internal error.', flags: MessageFlags.Ephemeral })
+  }
+}
 
 client.once(Events.ClientReady, (c) => {
   log.info({ tag: c.user.tag }, 'bot ready')
